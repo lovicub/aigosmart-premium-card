@@ -9,6 +9,11 @@ The Python integration is a separate project:
 it first. This card uses Home Assistant entity services; it does not log in to
 AigoSmart or communicate directly with Alibaba IoT.
 
+<img width="728" height="1292" alt="image" src="https://github.com/user-attachments/assets/f0de3a4a-f8d8-494a-af9b-ca04b0767fd7" />
+
+<img width="744" height="1216" alt="image" src="https://github.com/user-attachments/assets/cd9ec3c8-b8ab-489d-bed3-cc172744301c" />
+
+
 ## Features
 
 - Heating ON/OFF, with confirmation before starting by default.
