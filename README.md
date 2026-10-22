@@ -1,0 +1,157 @@
+# AigoSmart Premium Card
+
+A native Home Assistant dashboard card for AigoSmart kettles. Version **0.1.0**.
+Animated kettle artwork, target-temperature presets and everyday controls in one
+responsive card. No external JavaScript or CSS libraries are required.
+
+The Python integration is a separate project:
+[**AigoSmart HA**](https://github.com/lovicub/aigosmart-ha). Install and configure
+it first. This card uses Home Assistant entity services; it does not log in to
+AigoSmart or communicate directly with Alibaba IoT.
+
+## Features
+
+- Heating ON/OFF, with confirmation before starting by default.
+- Target-temperature slider and presets; changes are sent with **Übernehmen** (Apply).
+- Mode selection using the options exposed by your Home Assistant select entity.
+- Keep-warm duration adjustment respecting the number entity's range and step.
+- Status and time display, plus Home Assistant more-info dialogs.
+- Inline SVG kettle, temperature-based glow, steam effects and responsive layout.
+- Reduced-motion support and optional animation disablement.
+- Busy-state guard and no automatic retry of failed service requests.
+
+The large temperature readout and glow represent the **target temperature**, not
+a live measurement of water temperature. The supplied UI labels and confirmations
+are currently German; this English README does not imply an English card UI.
+Modes 0/1/2 use built-in German labels; other select options display their values.
+The card does not switch heating on when it is loaded or when HA sends state updates.
+
+## Supported devices
+
+Intended for kettles supported by [AigoSmart HA](https://github.com/lovicub/aigosmart-ha)
+that provide the entity domains listed below. No exact retail model number has
+been supplied, so universal Aigostar device support is not claimed. Other appliances
+and cloud regions are outside the verified scope of the integration.
+
+## Installation via HACS
+
+After the repository is published:
+
+1. Open **HACS → Custom repositories**.
+2. Add `https://github.com/lovicub/aigosmart-premium-card`.
+3. Select **Dashboard** as the category and download the card.
+4. Check that the dashboard resource is registered as a **JavaScript module**.
+5. Reload the browser, then add the YAML configuration below.
+
+The HACS backend/action calls this category `plugin`. This project is a custom
+repository; inclusion in the default HACS catalog is not claimed.
+
+## Manual installation
+
+1. Copy `aigosmart-premium-card.js` to `config/www/aigosmart-premium-card.js`.
+2. In **Settings → Dashboards → Resources**, add
+   `/local/aigosmart-premium-card.js?v=0.1.0` with type **JavaScript module**.
+   Enable advanced mode if Resources is hidden.
+3. Reload your browser and add a Manual card with the configuration below.
+
+For updates, replace the JS file, change the resource query version and reload
+the browser. Do not add both manual and HACS resource entries for the same card.
+
+## Configuration
+
+Install and verify the integration first. Replace these example entity IDs with
+the actual IDs shown in **Developer tools → States**:
+
+```yaml
+type: custom:aigosmart-premium-card
+name: AigoSmart Kettle
+power_entity: switch.aigosmart_kettle_heatingswitch
+target_entity: number.aigosmart_kettle_target_temperature
+status_entity: sensor.aigosmart_kettle_status
+mode_entity: select.aigosmart_kettle_mode
+keep_warm_entity: number.aigosmart_kettle_heatpreservation
+time_entity: sensor.aigosmart_kettle_time
+animate: true
+confirm_start: true
+min_temperature: 40
+presets: [40, 70, 80, 90, 100]
+```
+
+A copy is available in [examples/card.yaml](examples/card.yaml). No account
+credentials, tokens or device identifiers belong in this YAML.
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| name | Aigostar Wasserkocher | Card heading |
+| power_entity | auto-detect | switch entity for HeatingSwitch |
+| target_entity | auto-detect | number entity for Target_temperature |
+| status_entity | auto-detect | sensor entity for status |
+| mode_entity | auto-detect | select entity for Mode |
+| keep_warm_entity | auto-detect | number entity for heatpreservation |
+| time_entity | auto-detect | sensor entity for Time |
+| heating_sensor | auto-detect | Accepted binary-sensor mapping; currently not used to determine active heating |
+| animate | true | Enable visual animation |
+| confirm_start | true | Ask for confirmation before turning heating on |
+| min_temperature | 40 | Fallback minimum if the number entity has no minimum attribute |
+| presets | [40, 70, 80, 90, 100] | Numeric temperature presets, filtered to the displayed range |
+
+Use numeric preset values. Home Assistant entity attributes provide the actual
+minimum, maximum and step. The temperature renderer limits the displayed range to
+0–100 °C. Selecting a preset edits the draft; pressing Apply sends the change.
+
+Auto-detection searches entity IDs for aigo, kettle or wasserkocher plus the
+property name and requires exactly one match. Explicit mappings are recommended,
+especially with multiple kettles. The power switch state determines heating visuals.
+
+## Screenshots
+
+Real installation screenshots have not been supplied. The SVG kettle is embedded
+in the JS, with no external image request. See [screenshot guidance](docs/screenshots/README.md)
+before contributing a redacted image. Generated mockups are not used as test evidence.
+
+## Troubleshooting
+
+- **Custom element does not exist:** confirm the resource URL and module type,
+  reload the browser, and remove duplicate/old resource entries.
+- **Entities not recognized:** enter explicit entity IDs; auto-detection intentionally
+  refuses ambiguous matches.
+- **Controls disabled:** check the power entity's availability and the integration.
+- **Target temperature does not change after clicking a preset:** press Apply.
+- **Command failed:** inspect the device state before trying again. The card does
+  not automatically retry; a backend timeout may leave the actual outcome unknown.
+- **Old appearance after updating:** change the resource URL query version and clear
+  the browser/app cache.
+- **Options or limits changed without an entity-state change:** the current card's
+  update signature tracks state values, not every attribute; reload the dashboard.
+
+Error handling logs the raw HA service-error object to the browser console. Review
+and redact console output before sharing it: depending on the backend, errors may
+contain entity names or other private details. Never attach account exports or HA
+`.storage` files to a public issue.
+
+## Development
+
+The supplied JS is copied byte-for-byte; no bundling or build step is needed.
+With Node.js 22:
+
+```sh
+node --check aigosmart-premium-card.js
+node tests/card.test.mjs
+```
+
+The offline tests use VM/DOM stubs and mocked HA service calls; they do not contact
+a kettle. They are not a substitute for browser layout, accessibility or live-device
+testing. GitHub Actions runs syntax and offline checks plus HACS plugin validation.
+hassfest applies to the Python integration, not this dashboard repository.
+
+See [Validation](VALIDATION.md), [Security review](SECURITY_REVIEW.md),
+[license/provenance notes](THIRD_PARTY_NOTICES.md) and [Publication handoff](PUBLISHING.md).
+
+## Disclaimer
+
+Unofficial community project, not affiliated with or endorsed by Aigostar, Alibaba,
+Home Assistant or HACS. Follow the appliance manufacturer's instructions. Keep
+heating-start confirmation enabled, ensure sufficient water and supervise use.
+This cloud-connected control is not an emergency stop or a safety interlock.
+Provided under the MIT License without warranty. Product names and trademarks
+belong to their respective owners.

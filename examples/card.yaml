@@ -1,0 +1,15 @@
+# Example entity IDs only. Replace them with your own Home Assistant entity IDs.
+type: custom:aigosmart-premium-card
+name: AigoSmart Kettle
+power_entity: switch.aigosmart_kettle_heatingswitch
+target_entity: number.aigosmart_kettle_target_temperature
+status_entity: sensor.aigosmart_kettle_status
+mode_entity: select.aigosmart_kettle_mode
+keep_warm_entity: number.aigosmart_kettle_heatpreservation
+time_entity: sensor.aigosmart_kettle_time
+# Optional; this sensor is not required by the card's current control logic:
+# heating_sensor: binary_sensor.aigosmart_kettle_heatingswitch
+animate: true
+confirm_start: true
+min_temperature: 40
+presets: [40, 70, 80, 90, 100]

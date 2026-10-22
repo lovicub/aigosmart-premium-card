@@ -1,0 +1,27 @@
+name: Validate
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require the actual card payload
+        run: test -s aigosmart-premium-card.js
+      - run: node --check aigosmart-premium-card.js
+      - run: node tests/card.test.mjs
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: plugin
+          comment: 'false'
