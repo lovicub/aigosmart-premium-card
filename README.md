@@ -108,12 +108,6 @@ Auto-detection searches entity IDs for aigo, kettle or wasserkocher plus the
 property name and requires exactly one match. Explicit mappings are recommended,
 especially with multiple kettles. The power switch state determines heating visuals.
 
-## Screenshots
-
-Real installation screenshots have not been supplied. The SVG kettle is embedded
-in the JS, with no external image request. See [screenshot guidance](docs/screenshots/README.md)
-before contributing a redacted image. Generated mockups are not used as test evidence.
-
 ## Troubleshooting
 
 - **Custom element does not exist:** confirm the resource URL and module type,
