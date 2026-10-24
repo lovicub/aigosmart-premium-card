@@ -1,6 +1,6 @@
 # AigoSmart Premium Card
 
-A native Home Assistant dashboard card for AigoSmart kettles. Version **0.1.0**.
+A native Home Assistant dashboard card for AigoSmart kettles. Version **0.1.1-beta.1** (opt-in beta).
 Animated kettle artwork, target-temperature presets and everyday controls in one
 responsive card. No external JavaScript or CSS libraries are required.
 
@@ -28,7 +28,8 @@ AigoSmart or communicate directly with Alibaba IoT.
 The large temperature readout and glow represent the **target temperature**, not
 a live measurement of water temperature. The supplied UI labels and confirmations
 are currently German; this English README does not imply an English card UI.
-Modes 0/1/2 use built-in German labels; other select options display their values.
+Device-provided labels take precedence. Without them, known numeric/text modes
+use German display labels; other declared options display their original text.
 The card does not switch heating on when it is loaded or when HA sends state updates.
 
 ## Supported devices
@@ -55,7 +56,7 @@ repository; inclusion in the default HACS catalog is not claimed.
 
 1. Copy `aigosmart-premium-card.js` to `config/www/aigosmart-premium-card.js`.
 2. In **Settings → Dashboards → Resources**, add
-   `/local/aigosmart-premium-card.js?v=0.1.0` with type **JavaScript module**.
+   `/local/aigosmart-premium-card.js?v=0.1.1-beta.1` with type **JavaScript module**.
    Enable advanced mode if Resources is hidden.
 3. Reload your browser and add a Manual card with the configuration below.
 
@@ -106,7 +107,9 @@ minimum, maximum and step. The temperature renderer limits the displayed range t
 
 Auto-detection searches entity IDs for aigo, kettle or wasserkocher plus the
 property name and requires exactly one match. Explicit mappings are recommended,
-especially with multiple kettles. The power switch state determines heating visuals.
+especially with multiple kettles. Normalized status controls visual activity with
+the power switch as a guard: switch OFF/unavailable never shows active steam.
+The power switch alone determines which explicit ON/OFF service is sent.
 
 ## Troubleshooting
 
@@ -120,17 +123,16 @@ especially with multiple kettles. The power switch state determines heating visu
   not automatically retry; a backend timeout may leave the actual outcome unknown.
 - **Old appearance after updating:** change the resource URL query version and clear
   the browser/app cache.
-- **Options or limits changed without an entity-state change:** the current card's
-  update signature tracks state values, not every attribute; reload the dashboard.
+- **Options, TSL labels or numeric limits changed:** the beta observes those
+  attributes even if the entity state stays the same. Check entity configuration
+  if the expected option is not offered; the card never invents a service value.
 
-Error handling logs the raw HA service-error object to the browser console. Review
-and redact console output before sharing it: depending on the backend, errors may
-contain entity names or other private details. Never attach account exports or HA
-`.storage` files to a public issue.
+Service errors log a fixed summary only, without the backend error object.
+Never attach account exports, tokens or HA `.storage` files to a public issue.
 
 ## Development
 
-The supplied JS is copied byte-for-byte; no bundling or build step is needed.
+The card JS is maintained directly; no bundling or build step is needed.
 With Node.js 22:
 
 ```sh
@@ -154,3 +156,45 @@ heating-start confirmation enabled, ensure sufficient water and supervise use.
 This cloud-connected control is not an emergency stop or a safety interlock.
 Provided under the MIT License without warranty. Product names and trademarks
 belong to their respective owners.
+
+
+## v0.1.1-beta.1 compatibility and installation
+
+This pre-release lives on `beta/enum-compat-v011`, based on the latest stable
+card main. It does not change the stable main branch. It supports integration
+v0.1.3, v0.1.4-beta.1 diagnostics and v0.1.4-beta.2 diagnostics + enum labels.
+The integration is not required to upgrade first. Keep existing YAML entity IDs.
+
+`normalizeMode()` accepts 0 / `"0"` / `One-click boil`, 1 / `"1"` /
+`Boil and keep warm`, and 2 / `"2"` / `Heating and keep warm`.
+`normalizeStatus()` accepts 1 / `"1"` / `Standby` (`Stand by` too),
+2 / `"2"` / `Heating`, 3 / `"3"` / `Cooling`, and 4 / `"4"` /
+`Keeping warm`. Common case/spacing/hyphen and existing German aliases normalize
+to private semantic IDs. Those IDs are never blindly sent to HA.
+
+Every Mode request is resolved against the **current** `attributes.options`.
+Exact declared values win, including model-specific options. A semantic alias
+is allowed only when it uniquely matches a supported option. Missing, stale,
+unavailable or ambiguous options send no command. Numeric and labeled state/
+option combinations remain correctly selected. Changed options, TSL labels and
+number limits rerender without requiring a state change. Runtime `mode_labels`
+and `status_labels` override the tested-model numeric assumptions, so another
+model's `0 = Tea profile` is not silently interpreted as boiling.
+
+Rendering never sends commands. Normalized status drives text, visual activity,
+steam and glow consistently for numeric and text input. The original SVG/CSS,
+target-temperature controls, keep-warm steps, confirmation, busy guard and
+single-attempt requests remain. Diagnostic and description sensors (including
+translated names) are excluded from automatic raw-state detection. Explicit
+entity mappings remain recommended, especially for multiple kettles.
+
+For HACS: open **AigoSmart Premium Card → ⋮ → Update information**, then
+**⋮ → Redownload → Need a different version? → Release → v0.1.1-beta.1 → Download**.
+Older UIs may require **Show beta versions**. Reload the browser/app (hard refresh
+or clear the frontend cache if it still shows 0.1.0). Keep a single JavaScript
+module resource at `/hacsfiles/aigosmart-premium-card/aigosmart-premium-card.js`.
+No HA integration deletion or account reconnect is required for a card update.
+
+The GitHub release is a pre-release with `latest=false`. Live browser rendering,
+installed-HA interaction and physical-device behavior remain unverified. Issue
+#3 stays open until real HA verification.

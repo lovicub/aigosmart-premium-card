@@ -1,3 +1,17 @@
+# Beta v0.1.1-beta.1 security update — 2026-10-24
+
+Service failures now log a fixed summary rather than the raw backend exception.
+Options and label text remain HTML escaped. Unknown/prototype-name aliases are
+not treated as semantic states; select calls use only actual current options.
+The card has no account login, direct cloud client or automatic service retry.
+Attribute-only updates to options/labels/limits are included in rendering.
+Offline tests cover these changes. The following original review is historical;
+its raw-error-logging and state-only-signature limitations are resolved in this
+beta. Other browser/XSS/layout limitations of VM stubs remain; this is not a
+complete browser security audit.
+
+---
+
 # Security and privacy review
 
 Reviewed on 2026-10-22. Source: premium-card/aigosmart-premium-card.js v0.1.0.

@@ -1,5 +1,29 @@
-/* AigoSmart Premium Card v0.1.0 — Lovelace custom card, no external dependencies */
-const AIGOSMART_PREMIUM_CARD_VERSION = '0.1.0';
+/* AigoSmart Premium Card v0.1.1-beta.1 — Lovelace custom card, no external dependencies */
+const AIGOSMART_PREMIUM_CARD_VERSION = '0.1.1-beta.1';
+// Stable semantic identifiers are internal only; HA services receive real options.
+function enumAlias(value) {
+  if (!['string', 'number'].includes(typeof value)) return '';
+  return String(value).trim().toLowerCase().replace(/[–—_-]/g, ' ').replace(/\s+/g, ' ');
+}
+function normalizeMode(value, labels = {}) {
+  const key = String(value);
+  if (labels && Object.hasOwn(labels, key)) return normalizeMode(labels[key]);
+  const modes = {'0':'one_click_boil', 'one click boil':'one_click_boil', 'ein klick kochen':'one_click_boil',
+    '1':'boil_keep_warm', 'boil and keep warm':'boil_keep_warm', 'boil keep warm':'boil_keep_warm', 'kochen & warmhalten':'boil_keep_warm',
+    '2':'heat_keep_warm', 'heating and keep warm':'heat_keep_warm', 'heat keep warm':'heat_keep_warm', 'erwärmen & warmhalten':'heat_keep_warm'};
+  const alias = enumAlias(value);
+  return Object.hasOwn(modes, alias) ? modes[alias] : null;
+}
+function normalizeStatus(value, labels = {}) {
+  const key = String(value);
+  if (labels && Object.hasOwn(labels, key)) return normalizeStatus(labels[key]);
+  const statuses = {'1':'standby', 'standby':'standby', 'stand by':'standby',
+    '2':'heating', 'heating':'heating', 'heizt':'heating',
+    '3':'cooling', 'cooling':'cooling', 'kühlt ab':'cooling',
+    '4':'keeping_warm', 'keeping warm':'keeping_warm', 'hält warm':'keeping_warm'};
+  const alias = enumAlias(value);
+  return Object.hasOwn(statuses, alias) ? statuses[alias] : null;
+}
 class AigoSmartPremiumCard extends HTMLElement {
   static getStubConfig() {
     return {
@@ -22,7 +46,13 @@ class AigoSmartPremiumCard extends HTMLElement {
     this._hass = hass;
     if (!this.config) return;
     const names = this.entities();
-    const sig = Object.values(names).map(id => `${id}:${hass.states[id]?.state ?? '?'}`).join('|') + `|${this._busy}|${this._message}`;
+    const sig = JSON.stringify(Object.entries(names).map(([role, id]) => {
+      const item = hass.states[id], attrs = item?.attributes || {};
+      return [role, id, item?.state ?? null,
+        role === 'mode' ? [attrs.options, attrs.mode_labels] :
+        role === 'status' ? [attrs.status_labels, attrs.status_label] :
+        ['target', 'warm'].includes(role) ? [attrs.min, attrs.max, attrs.step] : null];
+    })) + `|${this._busy}|${this._message}`;
     if (sig !== this._signature) { this._signature = sig; this.render(); }
   }
   getCardSize() { return 8; }
@@ -32,26 +62,41 @@ class AigoSmartPremiumCard extends HTMLElement {
     const find = (domain, needle, exclude = []) => {
       const matches = Object.keys(states).filter(id => id.startsWith(domain + '.') &&
         /aigo|kettle|wasserkocher/i.test(id) && id.toLowerCase().includes(needle) &&
-        !exclude.some(fragment => id.includes(fragment)));
+        !exclude.some(fragment => id.includes(fragment)) &&
+        !(domain === 'sensor' && Object.hasOwn(states[id]?.attributes || {}, 'raw_value')));
       return matches.length === 1 ? matches[0] : '';
     };
     return {
       power: this.config.power_entity || find('switch', 'heatingswitch'),
       target: this.config.target_entity || find('number', 'target_temperature'),
-      status: this.config.status_entity || find('sensor', 'status'),
+      status: this.config.status_entity || find('sensor', 'status', ['authorization_status', 'connection_status', 'status_description']),
       mode: this.config.mode_entity || find('select', 'mode'),
       warm: this.config.keep_warm_entity || find('number', 'heatpreservation'),
-      time: this.config.time_entity || find('sensor', 'time'),
+      time: this.config.time_entity || find('sensor', 'time', ['session_time_remaining', 'refresh', 'last_successful', 'expires_at']),
       heating: this.config.heating_sensor || find('binary_sensor', 'heatingswitch')
     };
   }
   state(id) { return id ? this._hass?.states?.[id] : null; }
   num(id) { const s = this.state(id)?.state; if (!s || ['unknown','unavailable'].includes(s)) return NaN; const n = Number(String(s).replace(',','.')); return Number.isFinite(n) ? n : NaN; }
   more(id) { if (id) this.dispatchEvent(new CustomEvent('hass-more-info', {detail:{entityId:id}, bubbles:true, composed:true})); }
-  statusText(raw, powerOn) {
-    const names = {'1':'Standby','2':'Heizt','3':'Kühlt ab','4':'Hält warm'};
-    if (raw === undefined || raw === null || ['unknown','unavailable'].includes(String(raw))) return powerOn ? 'Heizt' : 'Nicht verfügbar';
-    return names[String(raw)] || `Status ${raw}`;
+  normalizeMode(value, labels) { return normalizeMode(value, labels); }
+  normalizeStatus(value, labels) { return normalizeStatus(value, labels); }
+  modeOptions() {
+    const options = this.state(this.entities().mode)?.attributes?.options;
+    return Array.isArray(options) ? options.filter(opt => typeof opt === 'string' || typeof opt === 'number' && Number.isFinite(opt)) : [];
+  }
+  modeText(option, labels) {
+    if (labels && typeof labels[String(option)] === 'string') return labels[String(option)];
+    return ({one_click_boil:'Ein-Klick-Kochen', boil_keep_warm:'Kochen & Warmhalten',
+      heat_keep_warm:'Erwärmen & Warmhalten'})[normalizeMode(option)] || String(option);
+  }
+  statusText(raw, powerOn, labels) {
+    const names = {standby:'Standby', heating:'Heizt', cooling:'Kühlt ab', keeping_warm:'Hält warm'};
+    const status = normalizeStatus(raw, labels);
+    if (status) return names[status];
+    if (labels && typeof labels[String(raw)] === 'string') return labels[String(raw)];
+    if (!enumAlias(raw) || ['unknown','unavailable'].includes(enumAlias(raw))) return powerOn ? 'Heizt' : 'Nicht verfügbar';
+    return `Status ${raw}`;
   }
   glow(target, active) {
     // Target temperature governs warmth, but standby gets a restrained blue aura.
@@ -66,7 +111,7 @@ class AigoSmartPremiumCard extends HTMLElement {
     if (this._busy) return;
     this._busy = true; this._message = ''; this._signature = ''; this.render();
     try { await this._hass.callService(domain, action, data); this._message = 'Befehl gesendet · Status wird aktualisiert'; }
-    catch (error) { this._message = 'Befehl fehlgeschlagen. Verbindung und HA-Protokoll prüfen.'; console.error('AigoSmart card service failure:', error); }
+    catch (error) { this._message = 'Befehl fehlgeschlagen. Verbindung und HA-Protokoll prüfen.'; console.error('AigoSmart card service failure'); }
     finally { this._busy = false; this._signature = ''; this.render(); }
   }
   power() {
@@ -85,7 +130,21 @@ class AigoSmartPremiumCard extends HTMLElement {
     this._draft = null;
     this.service('number','set_value',{entity_id:id,value:temp});
   }
-  setMode(option) { const id = this.entities().mode; if (id && this.state(id) && option) this.service('select','select_option',{entity_id:id,option}); }
+  supportedMode(requested) {
+    if (!['string','number'].includes(typeof requested)) return undefined;
+    const item = this.state(this.entities().mode), options = this.modeOptions();
+    const exact = options.find(opt => String(opt) === String(requested));
+    if (exact !== undefined) return exact;
+    const labels = item?.attributes?.mode_labels, mode = normalizeMode(requested, labels);
+    const matches = mode ? options.filter(opt => normalizeMode(opt, labels) === mode) : [];
+    return matches.length === 1 ? matches[0] : undefined;
+  }
+  setMode(requested) {
+    const id = this.entities().mode, item = this.state(id);
+    if (!id || !item || !enumAlias(item.state) || ['unknown', 'unavailable'].includes(enumAlias(item.state))) return;
+    const option = this.supportedMode(requested);
+    if (option !== undefined) this.service('select','select_option',{entity_id:id,option:String(option)});
+  }
   setWarm(delta) {
     const id = this.entities().warm, n = this.num(id);
     if (!id || !Number.isFinite(n)) return;
@@ -126,21 +185,24 @@ class AigoSmartPremiumCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({mode:'open'});
     const e = this.entities(), power = this.state(e.power)?.state,
       active = power === 'on', offline = !['on','off'].includes(power),
-      status = this.state(e.status)?.state, target = this.num(e.target), warm = this.num(e.warm),
-      time = this.num(e.time), modeState = this.state(e.mode), options = modeState?.attributes?.options || [],
-      mood = this.glow(target,active), tMin = Math.max(0,Number(this.state(e.target)?.attributes?.min ?? this.config.min_temperature)),
+      status = this.state(e.status)?.state, statusLabels = this.state(e.status)?.attributes?.status_labels,
+      semanticStatus = normalizeStatus(status, statusLabels),
+      activity = offline ? 'unavailable' : semanticStatus || (active ? 'heating' : 'standby'),
+      visualActive = !offline && active && ['heating', 'keeping_warm'].includes(activity), target = this.num(e.target), warm = this.num(e.warm),
+      time = this.num(e.time), modeState = this.state(e.mode), options = this.modeOptions(),
+      mood = this.glow(target,visualActive), tMin = Math.max(0,Number(this.state(e.target)?.attributes?.min ?? this.config.min_temperature)),
       tMax = Math.min(100,Number(this.state(e.target)?.attributes?.max ?? 100)),
       displayed = Number.isFinite(this._draft) ? this._draft : (Number.isFinite(target) ? target : tMin),
-      modeLabels = {'0':'Ein-Klick-Kochen','1':'Kochen & Warmhalten','2':'Erwärmen & Warmhalten'},
-      optionsHtml = options.map(opt => `<option value="${this.esc(opt)}" ${String(opt)===String(modeState?.state)?'selected':''}>${this.esc(modeLabels[String(opt)] || opt)}</option>`).join('');
+      modeLabels = modeState?.attributes?.mode_labels, selectedMode = this.supportedMode(modeState?.state),
+      optionsHtml = options.map(opt => `<option value="${this.esc(opt)}" ${String(opt)===String(selectedMode)?'selected':''}>${this.esc(this.modeText(opt, modeLabels))}</option>`).join('');
     this.shadowRoot.innerHTML = `<style>${this.css()}</style>
-      <ha-card style="--heat:${mood.color};--heat-soft:${mood.soft};--heat-power:${mood.level}" class="${active?'on':'off'} ${offline?'offline':''} ${this.config.animate===false?'no-animation':''}">
-        <header><div class="brand"><ha-icon icon="mdi:kettle-steam"></ha-icon></div><div class="heading"><div class="name">${this.esc(this.config.name)}</div><div class="status"><i></i>${this.esc(offline?'Nicht verfügbar':this.statusText(status,active))}</div></div><button class="icon-button" data-a="more" title="Gerätedetails"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button><button class="power ${active?'engaged':''}" data-a="power" aria-label="${active?'Ausschalten':'Einschalten'}" ${offline||this._busy?'disabled':''}><ha-icon icon="mdi:power"></ha-icon></button></header>
-        <section class="hero"><div class="heater-ring"></div><div class="device">${this.kettleSvg(active,mood.color)}</div><div class="readout"><small>ZIElTEMPERATUR</small><div class="big">${Number.isFinite(target)?target.toFixed(0):'–'}<em>°C</em></div><div class="tag">${active?'● Heizung aktiv':'● '+this.esc(this.statusText(status,active))}</div><div class="caption">${active?'Temperaturziel · nicht die aktuelle Wassertemperatur':'Bereit für den nächsten Start'}</div></div></section>
+      <ha-card style="--heat:${mood.color};--heat-soft:${mood.soft};--heat-power:${mood.level}" class="${visualActive?'on':'off'} state-${activity} ${offline?'offline':''} ${this.config.animate===false?'no-animation':''}">
+        <header><div class="brand"><ha-icon icon="mdi:kettle-steam"></ha-icon></div><div class="heading"><div class="name">${this.esc(this.config.name)}</div><div class="status"><i></i>${this.esc(offline?'Nicht verfügbar':this.statusText(status,active,statusLabels))}</div></div><button class="icon-button" data-a="more" title="Gerätedetails"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button><button class="power ${active?'engaged':''}" data-a="power" aria-label="${active?'Ausschalten':'Einschalten'}" ${offline||this._busy?'disabled':''}><ha-icon icon="mdi:power"></ha-icon></button></header>
+        <section class="hero"><div class="heater-ring"></div><div class="device">${this.kettleSvg(visualActive && activity === 'heating',mood.color)}</div><div class="readout"><small>ZIElTEMPERATUR</small><div class="big">${Number.isFinite(target)?target.toFixed(0):'–'}<em>°C</em></div><div class="tag">${'● '+this.esc(this.statusText(status,active,statusLabels))}</div><div class="caption">${active?'Temperaturziel · nicht die aktuelle Wassertemperatur':'Bereit für den nächsten Start'}</div></div></section>
         <section class="temperature"><div class="section-top"><div><small>TEMPERATUR</small><strong>Temperatur einstellen</strong></div><span class="draft-value">${Math.round(displayed)}°C</span></div><input class="temp-range" data-a="temp-range" type="range" min="${tMin}" max="${tMax}" step="${this.state(e.target)?.attributes?.step || 1}" value="${Math.min(tMax,Math.max(tMin,displayed))}" ${!e.target||offline||this._busy?'disabled':''} aria-label="Zieltemperatur"/><div class="temp-actions"><div class="presets">${this.config.presets.filter(x=>x>=tMin&&x<=tMax).map(n=>`<button data-temp="${Number(n)}" class="${Math.round(displayed)===n?'selected':''}" ${offline||this._busy?'disabled':''}>${n}°</button>`).join('')}</div><button class="apply" data-a="apply-temp" ${offline||this._busy||!e.target?'disabled':''}>Übernehmen <ha-icon icon="mdi:check"></ha-icon></button></div></section>
-        <div class="controls"><section class="control"><div class="control-heading"><ha-icon icon="mdi:creation"></ha-icon><div><small>BETRIEBSMODUS</small><strong>Modus auswählen</strong></div></div><select data-a="mode" ${!e.mode||offline||this._busy?'disabled':''}>${optionsHtml || '<option value="">Nicht verfügbar</option>'}</select></section>
+        <div class="controls"><section class="control"><div class="control-heading"><ha-icon icon="mdi:creation"></ha-icon><div><small>BETRIEBSMODUS</small><strong>Modus auswählen</strong></div></div><select data-a="mode" ${!e.mode||!modeState||!options.length||['unknown','unavailable'].includes(enumAlias(modeState.state))||offline||this._busy?'disabled':''}>${optionsHtml || '<option value="">Nicht verfügbar</option>'}</select></section>
         <section class="control"><div class="control-heading"><ha-icon icon="mdi:clock-outline"></ha-icon><div><small>WARMHALTEN</small><strong>Warmhaltezeit</strong></div></div><div class="stepper"><button data-a="warm-down" ${!e.warm||offline||this._busy?'disabled':''} aria-label="Zeit verringern"><ha-icon icon="mdi:minus"></ha-icon></button><span>${Number.isFinite(warm)?warm+' h':'–'}</span><button data-a="warm-up" ${!e.warm||offline||this._busy?'disabled':''} aria-label="Zeit erhöhen"><ha-icon icon="mdi:plus"></ha-icon></button></div></section></div>
-        <section class="stats"><button data-more="${this.esc(e.status)}"><ha-icon icon="mdi:information-outline"></ha-icon><span>Status</span><b>${this.esc(this.statusText(status,active))}</b></button><button data-more="${this.esc(e.time)}"><ha-icon icon="mdi:timer-outline"></ha-icon><span>Zeit</span><b>${Number.isFinite(time)?time+' min':'–'}</b></button></section>
+        <section class="stats"><button data-more="${this.esc(e.status)}"><ha-icon icon="mdi:information-outline"></ha-icon><span>Status</span><b>${this.esc(this.statusText(status,active,statusLabels))}</b></button><button data-more="${this.esc(e.time)}"><ha-icon icon="mdi:timer-outline"></ha-icon><span>Zeit</span><b>${Number.isFinite(time)?time+' min':'–'}</b></button></section>
         ${!e.power||!e.target||!e.mode?`<div class="notice"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>Entitäten nicht vollständig erkannt. Bitte Entity-IDs in der Kartenkonfiguration angeben.</div>`:''}
         <div class="message" role="status" aria-live="polite">${this.esc(this._message)}</div><footer>AIGOSMART <span>·</span> PREMIUM CONTROL <span>·</span> ${AIGOSMART_PREMIUM_CARD_VERSION}</footer>
       </ha-card>`;
